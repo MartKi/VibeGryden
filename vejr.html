@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lokalt Vejr</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            padding: 40px;
+            max-width: 500px;
+            width: 100%;
+            text-align: center;
+            backdrop-filter: blur(10px);
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 16px;
+        }
+
+        .location {
+            font-size: 24px;
+            font-weight: bold;
+            color: #444;
+            margin-bottom: 20px;
+        }
+
+        .weather-icon {
+            width: 100px;
+            height: 100px;
+            margin: 0 auto 20px;
+        }
+
+        .temp {
+            font-size: 48px;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .description {
+            font-size: 20px;
+            color: #555;
+            margin-bottom: 25px;
+            text-transform: capitalize;
+        }
+
+        .details {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            margin-bottom: 25px;
+        }
+
+        .detail-item {
+            background: #f5f7fa;
+            border-radius: 10px;
+            padding: 12px;
+        }
+
+        .detail-label {
+            font-size: 12px;
+            color: #888;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 5px;
+        }
+
+        .detail-value {
+            font-size: 18px;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 50px;
+            padding: 14px 30px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: #667eea;
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .error {
+            color: #e74c3c;
+            margin-bottom: 20px;
+            font-size: 16px;
+        }
+
+        .instructions {
+            background: #fff3cd;
+            border: 1px solid #ffc107;
+            border-radius: 10px;
+            padding: 15px;
+            margin-top: 20px;
+            font-size: 14px;
+            color: #856404;
+        }
+
+        .instructions a {
+            color: #856404;
+            text-decoration: underline;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .time {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Lokalt Vejr</h1>
+        <p class="subtitle">Se vejret for din nuværende position</p>
+        
+        <div id="error" class="error hidden"></div>
+        
+        <div id="instructions" class="instructions">
+            <strong>Første gang?</strong> Klik på "Få min position" for at tillade adgang til din placering, 
+            derefter hentes vejrdata automatisk.
+        </div>
+        
+        <button id="getLocationBtn" class="btn">
+            <span id="btnText">Få min position</span>
+            <span id="loadingSpinner" class="loading hidden"></span>
+        </button>
+        
+        <div id="weatherInfo" class="hidden">
+            <div class="location" id="location">Henter data...</div>
+            <div class="time" id="time"></div>
+            <img class="weather-icon" id="weatherIcon" src="" alt="Vejr ikon">
+            <div class="temp" id="temperature">--°C</div>
+            <div class="description" id="description">--</div>
+            <div class="details">
+                <div class="detail-item">
+                    <div class="detail-label">Føles som</div>
+                    <div class="detail-value" id="feelsLike">--°C</div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-label">Fugtighed</div>
+                    <div class="detail-value" id="humidity">--%</div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-label">Vind</div>
+                    <div class="detail-value" id="windSpeed">-- m/s</div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-label">Tryk</div>
+                    <div class="detail-value" id="pressure">-- hPa</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // API nøgle til OpenWeatherMap (gratis tier)
+        // Du kan få din egen nøgle på: https://openweathermap.org/api
+        const API_KEY = '4a3a2f9d407852322e7058396b33153d';
+
+        const getLocationBtn = document.getElementById('getLocationBtn');
+        const btnText = document.getElementById('btnText');
+        const loadingSpinner = document.getElementById('loadingSpinner');
+        const weatherInfo = document.getElementById('weatherInfo');
+        const errorElement = document.getElementById('error');
+        const instructions = document.getElementById('instructions');
+
+        // Vejr elementer
+        const locationElement = document.getElementById('location');
+        const timeElement = document.getElementById('time');
+        const temperatureElement = document.getElementById('temperature');
+        const descriptionElement = document.getElementById('description');
+        const weatherIconElement = document.getElementById('weatherIcon');
+        const feelsLikeElement = document.getElementById('feelsLike');
+        const humidityElement = document.getElementById('humidity');
+        const windSpeedElement = document.getElementById('windSpeed');
+        const pressureElement = document.getElementById('pressure');
+
+        // Tjek om API nøgle er sat
+        function checkApiKey() {
+            if (API_KEY === 'YOUR_API_KEY_HERE') {
+                errorElement.textContent = 'Venligst indsæt din OpenWeatherMap API nøgle i koden.';
+                errorElement.classList.remove('hidden');
+                instructions.innerHTML = '<strong>Sådan gør du:</strong> 1) Gå til <a href="https://openweathermap.org/api" target="_blank">OpenWeatherMap</a>, 2) Opret en gratis konto, 3) Få din API nøgle under "API keys", 4) Erstat "YOUR_API_KEY_HERE" i koden med din nøgle.';
+                return false;
+            }
+            return true;
+        }
+
+        // Hent brugerens position
+        function getLocation() {
+            if (!checkApiKey()) return;
+
+            btnText.textContent = 'Henter...';
+            loadingSpinner.classList.remove('hidden');
+            getLocationBtn.disabled = true;
+            errorElement.classList.add('hidden');
+
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    position => {
+                        const { latitude, longitude } = position.coords;
+                        fetchWeather(latitude, longitude);
+                    },
+                    error => {
+                        showError('Kunne ikke hente din position: ' + getErrorMessage(error));
+                    }
+                );
+            } else {
+                showError('Geolocation understøttes ikke af din browser.');
+            }
+        }
+
+        // Hent vejrdata fra OpenWeatherMap
+        async function fetchWeather(lat, lon) {
+            try {
+                // Hent vejrdata
+                const weatherResponse = await fetch(
+                    `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${API_KEY}&units=metric&lang=da`
+                );
+                
+                if (!weatherResponse.ok) {
+                    throw new Error('Kunne ikke hente vejrdata. HTTP: ' + weatherResponse.status);
+                }
+
+                const weatherData = await weatherResponse.json();
+                displayWeather(weatherData);
+
+                // Hent bynavn fra reverse geocoding
+                const geoResponse = await fetch(
+                    `https://api.openweathermap.org/geo/1.0/reverse?lat=${lat}&lon=${lon}&appid=${API_KEY}&limit=1`
+                );
+                
+                if (geoResponse.ok) {
+                    const geoData = await geoResponse.json();
+                    if (geoData && geoData.length > 0) {
+                        const city = geoData[0].name;
+                        const country = geoData[0].country;
+                        locationElement.textContent = `${city}, ${country}`;
+                    }
+                }
+
+            } catch (error) {
+                showError('Fejl ved hentning af vejrdata: ' + error.message);
+            }
+        }
+
+        // Vis vejrdata
+        function displayWeather(data) {
+            // Temperatur
+            const temp = Math.round(data.main.temp);
+            const feelsLike = Math.round(data.main.feels_like);
+            temperatureElement.textContent = `${temp}°C`;
+            feelsLikeElement.textContent = `${feelsLike}°C`;
+
+            // Beskrivelse
+            descriptionElement.textContent = data.weather[0].description;
+
+            // Ikon
+            const iconCode = data.weather[0].icon;
+            weatherIconElement.src = `https://openweathermap.org/img/wn/${iconCode}@2x.png`;
+            weatherIconElement.alt = data.weather[0].description;
+
+            // Fugtighed
+            humidityElement.textContent = `${data.main.humidity}%`;
+
+            // Vindhastighed (konverter fra m/s til km/h for bedre forståelse)
+            const windSpeedMs = data.wind.speed;
+            const windSpeedKmh = Math.round(windSpeedMs * 3.6);
+            windSpeedElement.textContent = `${windSpeedMs} m/s (${windSpeedKmh} km/h)`;
+
+            // Tryk
+            pressureElement.textContent = `${data.main.pressure} hPa`;
+
+            // Tid
+            const now = new Date();
+            const timeString = now.toLocaleTimeString('da-DK', { 
+                hour: '2-digit', 
+                minute: '2-digit' 
+            });
+            const dateString = now.toLocaleDateString('da-DK', { 
+                weekday: 'long', 
+                day: 'numeric', 
+                month: 'long' 
+            });
+            timeElement.textContent = `${dateString} - ${timeString}`;
+
+            // Vis vejr info
+            weatherInfo.classList.remove('hidden');
+            instructions.classList.add('hidden');
+            
+            // Skjul knap og vis opdateringsknap
+            btnText.textContent = 'Opdater vejr';
+            loadingSpinner.classList.add('hidden');
+            getLocationBtn.disabled = false;
+            getLocationBtn.onclick = getLocation;
+        }
+
+        // Vis fejlmeddelelse
+        function showError(message) {
+            errorElement.textContent = message;
+            errorElement.classList.remove('hidden');
+            btnText.textContent = 'Prøv igen';
+            loadingSpinner.classList.add('hidden');
+            getLocationBtn.disabled = false;
+            getLocationBtn.onclick = getLocation;
+        }
+
+        // Konverter geolocation fejl til forståelig besked
+        function getErrorMessage(error) {
+            switch (error.code) {
+                case error.PERMISSION_DENIED:
+                    return 'Adgang til position blev nægtet. Venligst tillad adgang for at se vejret.';
+                case error.POSITION_UNAVAILABLE:
+                    return 'Position information er ikke tilgængelig.';
+                case error.TIMEOUT:
+                    return 'Hentning af position tog for lang tid.';
+                case error.UNKNOWN_ERROR:
+                    return 'En ukendt fejl opstod.';
+                default:
+                    return error.message || 'Ukendt fejl.';
+            }
+        }
+
+        // Start - tilføj event listener
+        getLocationBtn.addEventListener('click', getLocation);
+
+        // Tjek om browseren allerede har tilladelse til location
+        if (navigator.permissions) {
+            navigator.permissions.query({ name: 'geolocation' }).then(result => {
+                if (result.state === 'granted') {
+                    // Hvis tilladelse allerede er givet, hent automatisk
+                    setTimeout(() => {
+                        if (!weatherInfo.classList.contains('hidden')) return;
+                        getLocation();
+                    }, 1000);
+                }
+            });
+        }
+    </script>
+</body>
+</html>
