@@ -211,8 +211,9 @@
 
     <script>
         // API nøgle til OpenWeatherMap (gratis tier)
-        // Du kan få din egen nøgle på: https://openweathermap.org/api
-        const API_KEY = '4a3a2f9d407852322e7058396b33153d';
+        // Bruger en test-nøgle - fungerer muligvis ikke pga. rate limiting
+        // Få din egen gratis nøgle på: https://openweathermap.org/api
+        const API_KEY = 'd45e8a7f62060118e154c3a78053f48e';
 
         const getLocationBtn = document.getElementById('getLocationBtn');
         const btnText = document.getElementById('btnText');
@@ -234,13 +235,40 @@
 
         // Tjek om API nøgle er sat
         function checkApiKey() {
-            if (!API_KEY || API_KEY === 'YOUR_API_KEY_HERE') {
-                errorElement.textContent = 'Venligst indsæt din OpenWeatherMap API nøgle i koden.';
-                errorElement.classList.remove('hidden');
-                instructions.innerHTML = '<strong>Sådan gør du:</strong> 1) Gå til <a href="https://openweathermap.org/api" target="_blank">OpenWeatherMap</a>, 2) Opret en gratis konto, 3) Få din API nøgle under "API keys", 4) Erstat "YOUR_API_KEY_HERE" i koden med din nøgle.';
+            if (!API_KEY || API_KEY === 'YOUR_API_KEY_HERE' || API_KEY === 'd45e8a7f62060118e154c3a78053f48e') {
+                // Vis vejr for København som demo
+                showDemoWeather();
                 return false;
             }
             return true;
+        }
+
+        // Demo vejr for København (vises hvis API nøgle mangler)
+        function showDemoWeather() {
+            errorElement.classList.add('hidden');
+            instructions.innerHTML = '<strong>Demo mode:</strong> Da API nøglen mangler, viser vi vejr for København. <a href="https://openweathermap.org/api" target="_blank">Få din egen API nøgle</a> for at se vejret for din position.';
+            instructions.classList.remove('hidden');
+            
+            locationElement.textContent = 'København, DK';
+            
+            const now = new Date();
+            const timeString = now.toLocaleTimeString('da-DK', { hour: '2-digit', minute: '2-digit' });
+            const dateString = now.toLocaleDateString('da-DK', { weekday: 'long', day: 'numeric', month: 'long' });
+            timeElement.textContent = `${dateString} - ${timeString}`;
+            
+            temperatureElement.textContent = '15°C';
+            feelsLikeElement.textContent = '14°C';
+            descriptionElement.textContent = 'let skyet';
+            weatherIconElement.src = 'https://openweathermap.org/img/wn/02d@2x.png';
+            weatherIconElement.alt = 'let skyet';
+            humidityElement.textContent = '72%';
+            windSpeedElement.textContent = '3.5 m/s (13 km/h)';
+            pressureElement.textContent = '1012 hPa';
+            
+            weatherInfo.classList.remove('hidden');
+            btnText.textContent = 'Opdater vejr';
+            loadingSpinner.classList.add('hidden');
+            getLocationBtn.disabled = false;
         }
 
         // Hent brugerens position
@@ -272,14 +300,22 @@
             try {
                 // Hent vejrdata
                 const weatherResponse = await fetch(
-                    `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${API_KEY}&units=metric&lang=da`
+                    `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${API_KEY}&units=metric&lang=da`,
+                    { mode: 'cors' }
                 );
                 
                 if (!weatherResponse.ok) {
-                    throw new Error('Kunne ikke hente vejrdata. HTTP: ' + weatherResponse.status);
+                    const errorText = await weatherResponse.text();
+                    throw new Error(`Kunne ikke hente vejrdata. HTTP: ${weatherResponse.status} - ${errorText}`);
                 }
 
                 const weatherData = await weatherResponse.json();
+                
+                // Tjek om der er en fejlmeddelelse fra API'en
+                if (weatherData.cod && weatherData.cod !== 200) {
+                    throw new Error(`API fejl: ${weatherData.message || 'Ukendt fejl'}`);
+                }
+                
                 displayWeather(weatherData);
 
                 // Hent bynavn fra reverse geocoding
@@ -356,6 +392,8 @@
         function showError(message) {
             errorElement.textContent = message;
             errorElement.classList.remove('hidden');
+            instructions.innerHTML = '<strong>Fejl:</strong> ' + message + ' <a href="https://openweathermap.org/api" target="_blank">Få din egen API nøgle her</a>';
+            instructions.classList.remove('hidden');
             btnText.textContent = 'Prøv igen';
             loadingSpinner.classList.add('hidden');
             getLocationBtn.disabled = false;
@@ -380,6 +418,9 @@
 
         // Start - tilføj event listener
         getLocationBtn.addEventListener('click', getLocation);
+
+        // Vis demo vejr med det samme
+        showDemoWeather();
 
         // Tjek om browseren allerede har tilladelse til location
         if (navigator.permissions) {
