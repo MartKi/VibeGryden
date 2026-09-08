@@ -52,8 +52,8 @@
         }
 
         .weather-icon {
-            width: 100px;
-            height: 100px;
+            font-size: 72px;
+            line-height: 1;
             margin: 0 auto 20px;
         }
 
@@ -68,7 +68,6 @@
             font-size: 20px;
             color: #555;
             margin-bottom: 25px;
-            text-transform: capitalize;
         }
 
         .details {
@@ -110,23 +109,30 @@
             box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
         }
 
-        .btn:hover {
+        .btn:hover:not(:disabled) {
             transform: translateY(-2px);
             box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
         }
 
-        .btn:active {
+        .btn:active:not(:disabled) {
             transform: translateY(0);
+        }
+
+        .btn:disabled {
+            opacity: 0.65;
+            cursor: default;
         }
 
         .loading {
             display: inline-block;
-            width: 20px;
-            height: 20px;
-            border: 3px solid rgba(255, 255, 255, 0.3);
+            width: 16px;
+            height: 16px;
+            margin-left: 8px;
+            vertical-align: -2px;
+            border: 3px solid rgba(255, 255, 255, 0.35);
             border-radius: 50%;
-            border-top-color: #667eea;
-            animation: spin 1s ease-in-out infinite;
+            border-top-color: #fff;
+            animation: spin 1s linear infinite;
         }
 
         @keyframes spin {
@@ -139,7 +145,7 @@
             font-size: 16px;
         }
 
-        .instructions {
+        .notice {
             background: #fff3cd;
             border: 1px solid #ffc107;
             border-radius: 10px;
@@ -147,11 +153,6 @@
             margin-top: 20px;
             font-size: 14px;
             color: #856404;
-        }
-
-        .instructions a {
-            color: #856404;
-            text-decoration: underline;
         }
 
         .hidden {
@@ -163,29 +164,39 @@
             color: #666;
             margin-bottom: 10px;
         }
+
+        .source {
+            margin-top: 20px;
+            font-size: 12px;
+            color: #999;
+        }
+
+        .source a {
+            color: #999;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>Lokalt Vejr</h1>
         <p class="subtitle">Se vejret for din nuværende position</p>
-        
-        <div id="error" class="error hidden"></div>
-        
-        <div id="instructions" class="instructions">
-            <strong>Første gang?</strong> Klik på "Få min position" for at tillade adgang til din placering, 
+
+        <div id="error" class="error hidden" role="alert"></div>
+
+        <div id="notice" class="notice">
+            <strong>Første gang?</strong> Klik på "Få min position" for at tillade adgang til din placering,
             derefter hentes vejrdata automatisk.
         </div>
-        
-        <button id="getLocationBtn" class="btn">
+
+        <button id="getLocationBtn" class="btn" type="button">
             <span id="btnText">Få min position</span>
             <span id="loadingSpinner" class="loading hidden"></span>
         </button>
-        
+
         <div id="weatherInfo" class="hidden">
-            <div class="location" id="location">Henter data...</div>
+            <div class="location" id="location">--</div>
             <div class="time" id="time"></div>
-            <img class="weather-icon" id="weatherIcon" src="" alt="Vejr ikon">
+            <div class="weather-icon" id="weatherIcon" aria-hidden="true"></div>
             <div class="temp" id="temperature">--°C</div>
             <div class="description" id="description">--</div>
             <div class="details">
@@ -207,21 +218,29 @@
                 </div>
             </div>
         </div>
+
+        <p class="source">Vejrdata fra <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> (gratis, ingen API-nøgle)</p>
     </div>
 
     <script>
-        // API nøgle til OpenWeatherMap (gratis tier)
-        // Få din egen gratis nøgle på: https://openweathermap.org/api
-        const API_KEY = '0452401678919752277894845785475';
+        'use strict';
+
+        // Open-Meteo kræver ingen API-nøgle og tillader kald direkte fra browseren (CORS).
+        const WEATHER_URL = 'https://api.open-meteo.com/v1/forecast';
+        const GEOCODE_URL = 'https://api.bigdatacloud.net/data/reverse-geocode-client';
+
+        // Fallback hvis position ikke kan hentes: København.
+        const FALLBACK = { lat: 55.6761, lon: 12.5683, label: 'København, DK' };
+
+        const REQUEST_TIMEOUT_MS = 10000;
 
         const getLocationBtn = document.getElementById('getLocationBtn');
         const btnText = document.getElementById('btnText');
         const loadingSpinner = document.getElementById('loadingSpinner');
         const weatherInfo = document.getElementById('weatherInfo');
         const errorElement = document.getElementById('error');
-        const instructions = document.getElementById('instructions');
+        const noticeElement = document.getElementById('notice');
 
-        // Vejr elementer
         const locationElement = document.getElementById('location');
         const timeElement = document.getElementById('time');
         const temperatureElement = document.getElementById('temperature');
@@ -232,206 +251,216 @@
         const windSpeedElement = document.getElementById('windSpeed');
         const pressureElement = document.getElementById('pressure');
 
-        // Tjek om API nøgle er sat
-        function checkApiKey() {
-            if (!API_KEY || API_KEY === 'YOUR_API_KEY_HERE') {
-                // Vis vejr for København som demo
-                showDemoWeather();
-                return false;
-            }
-            return true;
-        }
+        let isLoading = false;
 
-        // Demo vejr for København (vises hvis API nøgle mangler)
-        function showDemoWeather() {
-            errorElement.classList.add('hidden');
-            instructions.innerHTML = '<strong>Demo mode:</strong> Da API nøglen mangler, viser vi vejr for København. <a href="https://openweathermap.org/api" target="_blank">Få din egen API nøgle</a> for at se vejret for din position.';
-            instructions.classList.remove('hidden');
-            
-            locationElement.textContent = 'København, DK';
-            
-            const now = new Date();
-            const timeString = now.toLocaleTimeString('da-DK', { hour: '2-digit', minute: '2-digit' });
-            const dateString = now.toLocaleDateString('da-DK', { weekday: 'long', day: 'numeric', month: 'long' });
-            timeElement.textContent = `${dateString} - ${timeString}`;
-            
-            temperatureElement.textContent = '15°C';
-            feelsLikeElement.textContent = '14°C';
-            descriptionElement.textContent = 'let skyet';
-            weatherIconElement.src = 'https://openweathermap.org/img/wn/02d@2x.png';
-            weatherIconElement.alt = 'let skyet';
-            humidityElement.textContent = '72%';
-            windSpeedElement.textContent = '3.5 m/s (13 km/h)';
-            pressureElement.textContent = '1012 hPa';
-            
-            weatherInfo.classList.remove('hidden');
-            btnText.textContent = 'Opdater vejr';
-            loadingSpinner.classList.add('hidden');
-            getLocationBtn.disabled = false;
-        }
+        // WMO weather codes -> dansk tekst og ikon.
+        const WEATHER_CODES = {
+            0:  { text: 'Klart vejr',                 day: '☀️', night: '🌙' },
+            1:  { text: 'Overvejende klart',          day: '🌤️', night: '🌙' },
+            2:  { text: 'Delvist skyet',              day: '⛅',  night: '☁️' },
+            3:  { text: 'Overskyet',                  day: '☁️',  night: '☁️' },
+            45: { text: 'Tåge',                       day: '🌫️', night: '🌫️' },
+            48: { text: 'Rimtåge',                    day: '🌫️', night: '🌫️' },
+            51: { text: 'Let støvregn',               day: '🌦️', night: '🌦️' },
+            53: { text: 'Støvregn',                   day: '🌦️', night: '🌦️' },
+            55: { text: 'Kraftig støvregn',           day: '🌧️', night: '🌧️' },
+            56: { text: 'Underkølet støvregn',        day: '🌧️', night: '🌧️' },
+            57: { text: 'Kraftig underkølet støvregn',day: '🌧️', night: '🌧️' },
+            61: { text: 'Let regn',                   day: '🌦️', night: '🌦️' },
+            63: { text: 'Regn',                       day: '🌧️', night: '🌧️' },
+            65: { text: 'Kraftig regn',               day: '🌧️', night: '🌧️' },
+            66: { text: 'Underkølet regn',            day: '🌧️', night: '🌧️' },
+            67: { text: 'Kraftig underkølet regn',    day: '🌧️', night: '🌧️' },
+            71: { text: 'Let snefald',                day: '🌨️', night: '🌨️' },
+            73: { text: 'Snefald',                    day: '🌨️', night: '🌨️' },
+            75: { text: 'Kraftigt snefald',           day: '❄️',  night: '❄️' },
+            77: { text: 'Snekorn',                    day: '❄️',  night: '❄️' },
+            80: { text: 'Lette regnbyger',            day: '🌦️', night: '🌦️' },
+            81: { text: 'Regnbyger',                  day: '🌧️', night: '🌧️' },
+            82: { text: 'Kraftige regnbyger',         day: '⛈️',  night: '⛈️' },
+            85: { text: 'Lette snebyger',             day: '🌨️', night: '🌨️' },
+            86: { text: 'Kraftige snebyger',          day: '🌨️', night: '🌨️' },
+            95: { text: 'Tordenvejr',                 day: '⛈️',  night: '⛈️' },
+            96: { text: 'Tordenvejr med let hagl',    day: '⛈️',  night: '⛈️' },
+            99: { text: 'Tordenvejr med kraftig hagl',day: '⛈️',  night: '⛈️' }
+        };
 
-        // Hent brugerens position
-        function getLocation() {
-            if (!checkApiKey()) return;
-
-            btnText.textContent = 'Henter...';
-            loadingSpinner.classList.remove('hidden');
-            getLocationBtn.disabled = true;
-            errorElement.classList.add('hidden');
-
-            if (navigator.geolocation) {
-                navigator.geolocation.getCurrentPosition(
-                    position => {
-                        const { latitude, longitude } = position.coords;
-                        fetchWeather(latitude, longitude);
-                    },
-                    error => {
-                        showError('Kunne ikke hente din position: ' + getErrorMessage(error));
-                    }
-                );
-            } else {
-                showError('Geolocation understøttes ikke af din browser.');
-            }
-        }
-
-        // Hent vejrdata fra OpenWeatherMap
-        async function fetchWeather(lat, lon) {
+        // fetch med timeout, så en hængende forbindelse ikke låser knappen for evigt.
+        async function fetchJson(url) {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
             try {
-                // Hent vejrdata
-                const weatherResponse = await fetch(
-                    `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${API_KEY}&units=metric&lang=da`,
-                    { mode: 'cors' }
-                );
-                
-                if (!weatherResponse.ok) {
-                    const errorText = await weatherResponse.text();
-                    throw new Error(`Kunne ikke hente vejrdata. HTTP: ${weatherResponse.status} - ${errorText}`);
+                const response = await fetch(url, { signal: controller.signal });
+                if (!response.ok) {
+                    throw new Error('HTTP ' + response.status);
                 }
-
-                const weatherData = await weatherResponse.json();
-                
-                // Tjek om der er en fejlmeddelelse fra API'en
-                if (weatherData.cod && weatherData.cod !== 200) {
-                    throw new Error(`API fejl: ${weatherData.message || 'Ukendt fejl'}`);
-                }
-                
-                displayWeather(weatherData);
-
-                // Hent bynavn fra reverse geocoding
-                const geoResponse = await fetch(
-                    `https://api.openweathermap.org/geo/1.0/reverse?lat=${lat}&lon=${lon}&appid=${API_KEY}&limit=1`
-                );
-                
-                if (geoResponse.ok) {
-                    const geoData = await geoResponse.json();
-                    if (geoData && geoData.length > 0) {
-                        const city = geoData[0].name;
-                        const country = geoData[0].country;
-                        locationElement.textContent = `${city}, ${country}`;
-                    }
-                }
-
+                return await response.json();
             } catch (error) {
-                showError('Fejl ved hentning af vejrdata: ' + error.message);
+                if (error.name === 'AbortError') {
+                    throw new Error('Forbindelsen tog for lang tid (timeout).');
+                }
+                throw error;
+            } finally {
+                clearTimeout(timer);
             }
         }
 
-        // Vis vejrdata
-        function displayWeather(data) {
-            // Temperatur
-            const temp = Math.round(data.main.temp);
-            const feelsLike = Math.round(data.main.feels_like);
-            temperatureElement.textContent = `${temp}°C`;
-            feelsLikeElement.textContent = `${feelsLike}°C`;
-
-            // Beskrivelse
-            descriptionElement.textContent = data.weather[0].description;
-
-            // Ikon
-            const iconCode = data.weather[0].icon;
-            weatherIconElement.src = `https://openweathermap.org/img/wn/${iconCode}@2x.png`;
-            weatherIconElement.alt = data.weather[0].description;
-
-            // Fugtighed
-            humidityElement.textContent = `${data.main.humidity}%`;
-
-            // Vindhastighed (konverter fra m/s til km/h for bedre forståelse)
-            const windSpeedMs = data.wind.speed;
-            const windSpeedKmh = Math.round(windSpeedMs * 3.6);
-            windSpeedElement.textContent = `${windSpeedMs} m/s (${windSpeedKmh} km/h)`;
-
-            // Tryk
-            pressureElement.textContent = `${data.main.pressure} hPa`;
-
-            // Tid
-            const now = new Date();
-            const timeString = now.toLocaleTimeString('da-DK', { 
-                hour: '2-digit', 
-                minute: '2-digit' 
-            });
-            const dateString = now.toLocaleDateString('da-DK', { 
-                weekday: 'long', 
-                day: 'numeric', 
-                month: 'long' 
-            });
-            timeElement.textContent = `${dateString} - ${timeString}`;
-
-            // Vis vejr info
-            weatherInfo.classList.remove('hidden');
-            instructions.classList.add('hidden');
-            
-            // Skjul knap og vis opdateringsknap
-            btnText.textContent = 'Opdater vejr';
-            loadingSpinner.classList.add('hidden');
-            getLocationBtn.disabled = false;
-            getLocationBtn.onclick = getLocation;
+        function setLoading(loading, label) {
+            isLoading = loading;
+            getLocationBtn.disabled = loading;
+            loadingSpinner.classList.toggle('hidden', !loading);
+            btnText.textContent = label;
         }
 
-        // Vis fejlmeddelelse
         function showError(message) {
             errorElement.textContent = message;
             errorElement.classList.remove('hidden');
-            instructions.innerHTML = '<strong>Fejl:</strong> ' + message + ' <a href="https://openweathermap.org/api" target="_blank">Få din egen API nøgle her</a>';
-            instructions.classList.remove('hidden');
-            btnText.textContent = 'Prøv igen';
-            loadingSpinner.classList.add('hidden');
-            getLocationBtn.disabled = false;
-            getLocationBtn.onclick = getLocation;
         }
 
-        // Konverter geolocation fejl til forståelig besked
-        function getErrorMessage(error) {
+        function clearError() {
+            errorElement.textContent = '';
+            errorElement.classList.add('hidden');
+        }
+
+        function showNotice(message) {
+            noticeElement.textContent = message;
+            noticeElement.classList.remove('hidden');
+        }
+
+        // Hent brugerens position som et Promise, så flowet kan skrives med await.
+        function getPosition() {
+            return new Promise((resolve, reject) => {
+                if (!window.isSecureContext) {
+                    reject(new Error('Positionsdata kræver HTTPS. Åbn siden via https:// eller localhost, ikke som en lokal fil.'));
+                    return;
+                }
+                if (!navigator.geolocation) {
+                    reject(new Error('Geolocation understøttes ikke af din browser.'));
+                    return;
+                }
+                navigator.geolocation.getCurrentPosition(
+                    position => resolve(position.coords),
+                    error => reject(new Error(geolocationMessage(error))),
+                    { enableHighAccuracy: false, timeout: REQUEST_TIMEOUT_MS, maximumAge: 300000 }
+                );
+            });
+        }
+
+        function geolocationMessage(error) {
             switch (error.code) {
                 case error.PERMISSION_DENIED:
-                    return 'Adgang til position blev nægtet. Venligst tillad adgang for at se vejret.';
+                    return 'Adgang til position blev nægtet.';
                 case error.POSITION_UNAVAILABLE:
-                    return 'Position information er ikke tilgængelig.';
+                    return 'Positionen er ikke tilgængelig lige nu.';
                 case error.TIMEOUT:
                     return 'Hentning af position tog for lang tid.';
-                case error.UNKNOWN_ERROR:
-                    return 'En ukendt fejl opstod.';
                 default:
-                    return error.message || 'Ukendt fejl.';
+                    return error.message || 'Ukendt fejl ved hentning af position.';
             }
         }
 
-        // Start - tilføj event listener
-        getLocationBtn.addEventListener('click', getLocation);
-
-        // Vis demo vejr med det samme
-        showDemoWeather();
-
-        // Tjek om browseren allerede har tilladelse til location
-        if (navigator.permissions) {
-            navigator.permissions.query({ name: 'geolocation' }).then(result => {
-                if (result.state === 'granted') {
-                    // Hvis tilladelse allerede er givet, hent automatisk
-                    setTimeout(() => {
-                        if (!weatherInfo.classList.contains('hidden')) return;
-                        getLocation();
-                    }, 1000);
+        // Bynavn via reverse geocoding. Fejler den, bruger vi koordinaterne i stedet.
+        async function resolvePlaceName(lat, lon) {
+            try {
+                const data = await fetchJson(
+                    GEOCODE_URL + '?latitude=' + lat + '&longitude=' + lon + '&localityLanguage=da'
+                );
+                const city = data.city || data.locality || data.principalSubdivision;
+                if (city) {
+                    return data.countryCode ? city + ', ' + data.countryCode : city;
                 }
-            });
+            } catch (error) {
+                // Bynavn er pynt, ikke data. Stilhed her, koordinater vises i stedet.
+            }
+            return lat.toFixed(2) + '°, ' + lon.toFixed(2) + '°';
+        }
+
+        async function fetchWeather(lat, lon) {
+            const url = WEATHER_URL
+                + '?latitude=' + lat
+                + '&longitude=' + lon
+                + '&current=temperature_2m,apparent_temperature,relative_humidity_2m,surface_pressure,wind_speed_10m,weather_code,is_day'
+                + '&wind_speed_unit=ms'
+                + '&timezone=auto';
+
+            const data = await fetchJson(url);
+            if (!data || !data.current) {
+                throw new Error('Uventet svar fra vejrtjenesten.');
+            }
+            return data.current;
+        }
+
+        function displayWeather(current, placeName) {
+            const codeInfo = WEATHER_CODES[current.weather_code] || { text: 'Ukendt vejrtype', day: '❓', night: '❓' };
+
+            locationElement.textContent = placeName;
+            weatherIconElement.textContent = current.is_day ? codeInfo.day : codeInfo.night;
+            descriptionElement.textContent = codeInfo.text;
+
+            temperatureElement.textContent = Math.round(current.temperature_2m) + '°C';
+            feelsLikeElement.textContent = Math.round(current.apparent_temperature) + '°C';
+            humidityElement.textContent = Math.round(current.relative_humidity_2m) + '%';
+            pressureElement.textContent = Math.round(current.surface_pressure) + ' hPa';
+
+            const windMs = current.wind_speed_10m;
+            windSpeedElement.textContent = windMs.toFixed(1) + ' m/s (' + Math.round(windMs * 3.6) + ' km/h)';
+
+            const now = new Date();
+            const timeString = now.toLocaleTimeString('da-DK', { hour: '2-digit', minute: '2-digit' });
+            const dateString = now.toLocaleDateString('da-DK', { weekday: 'long', day: 'numeric', month: 'long' });
+            timeElement.textContent = dateString + ' - ' + timeString;
+
+            weatherInfo.classList.remove('hidden');
+        }
+
+        async function loadWeather() {
+            if (isLoading) return;
+
+            clearError();
+            setLoading(true, 'Henter...');
+
+            let lat, lon, placeName, positionProblem = null;
+
+            try {
+                const coords = await getPosition();
+                lat = coords.latitude;
+                lon = coords.longitude;
+            } catch (error) {
+                positionProblem = error.message;
+                lat = FALLBACK.lat;
+                lon = FALLBACK.lon;
+            }
+
+            try {
+                const current = await fetchWeather(lat, lon);
+                placeName = positionProblem ? FALLBACK.label : await resolvePlaceName(lat, lon);
+                displayWeather(current, placeName);
+
+                if (positionProblem) {
+                    showNotice(positionProblem + ' Viser i stedet rigtige vejrdata for ' + FALLBACK.label + '.');
+                } else {
+                    noticeElement.classList.add('hidden');
+                }
+                setLoading(false, 'Opdater vejr');
+            } catch (error) {
+                weatherInfo.classList.add('hidden');
+                showError('Kunne ikke hente vejrdata: ' + error.message);
+                showNotice('Tjek din internetforbindelse og prøv igen.');
+                setLoading(false, 'Prøv igen');
+            }
+        }
+
+        getLocationBtn.addEventListener('click', loadWeather);
+
+        // Har brugeren allerede givet tilladelse, henter vi med det samme.
+        if (navigator.permissions && navigator.permissions.query) {
+            navigator.permissions.query({ name: 'geolocation' })
+                .then(result => {
+                    if (result.state === 'granted') {
+                        loadWeather();
+                    }
+                })
+                .catch(() => { /* Permissions API ikke understøttet for geolocation */ });
         }
     </script>
 </body>
