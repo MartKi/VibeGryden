@@ -234,7 +234,7 @@
 
         // Tjek om API nøgle er sat
         function checkApiKey() {
-            if (API_KEY === 'YOUR_API_KEY_HERE') {
+            if (!API_KEY || API_KEY === 'YOUR_API_KEY_HERE') {
                 errorElement.textContent = 'Venligst indsæt din OpenWeatherMap API nøgle i koden.';
                 errorElement.classList.remove('hidden');
                 instructions.innerHTML = '<strong>Sådan gør du:</strong> 1) Gå til <a href="https://openweathermap.org/api" target="_blank">OpenWeatherMap</a>, 2) Opret en gratis konto, 3) Få din API nøgle under "API keys", 4) Erstat "YOUR_API_KEY_HERE" i koden med din nøgle.';
